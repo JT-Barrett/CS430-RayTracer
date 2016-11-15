@@ -231,7 +231,7 @@ int read_scene(char* json_input, Scene scene){
             else if (strcmp(key, "radial-a0") == 0)
               scene[obj_num].light.radial_a0 = next_number(json);
             else if (strcmp(key, "angular-a0") == 0)
-              scene[obj_num].light.radial_a0 = next_number(json);                                                 
+              scene[obj_num].light.angular_a0 = next_number(json);                                                 
             else{
               fprintf(stderr, "Error: Unrecognized field \"%s\" for 'light'.\n.", key);
               exit(1);
@@ -312,108 +312,12 @@ int raycast(Pixel *buffer, Scene scene, int num_objects, int width, int height){
         color[0] = 0;
         color[1] = 0;
         color[2] = 0;
-        
-        //loop over lights adding lighting elements to the color
-        for (int i = 1; i < num_objects; i += 1) {
-          if(scene[i].kind != 4) 
-            continue;
-          double Ron[3];
-          double Rdn[3];
-          double Ron_temp[3];
 
-          //cast a ray from intersection to light, if there is no object in the way add specular color
-          v3_scale(Rd, best_t, Ron_temp);
-          v3_add(Ron_temp, Ro, Ron);
-          v3_sub(scene[i].light.center, Ron, Rdn);
+        shade(scene, num_objects, best_t, best_obj, Ro, Rd, color);
 
-          double B[3];
-          v3_sub(scene[i].light.center, Ron, B);
-          double dist = v3_mag(B);
-
-
-
-          double best_t_shadow;
-          int best_obj_shadow;
-          shoot_ray_shadow(scene, num_objects, best_obj, Ron, Rdn, &best_t_shadow, &best_obj_shadow);
-
-          //make sure to check that light obstruction is in front of the light
-          if (best_t_shadow > 0 && best_t_shadow != INFINITY && best_t_shadow < dist ) {
-            //Do nothing!
-          }
-          else{
-            // no object was in the way
-            // N, L, R, V
-            // Set up needed vectors
-            double N[3], L[3], R[3], V[3];
-
-            if(scene[best_obj].kind == 2)
-              memcpy(N, scene[best_obj].plane.normal, sizeof(double)*3); // if plane
-            else
-              v3_sub(Ron, scene[best_obj].sphere.center, N);
-            v3_normalize(N);
-
-            v3_sub(scene[i].light.center, Ron, L);
-            v3_normalize(L); //light_position - Ron;
-
-            //r=L−2(L DOT n)n
-            double q = 2*v3_dot(L, N);
-            double rscale[3];
-            v3_scale(N, q, rscale);
-            v3_sub(L, rscale, R);
-            v3_normalize(R);
-
-            memcpy(V, Rd, sizeof(double)*3);
-            v3_scale(V, -1.0, V);
-            v3_normalize(V);
-
-            //Populate the diffuse component
-            double diff_nl = v3_dot(N, L);
-            double diff[3];
-              diff[0] = scene[best_obj].diffuse_color[0]*scene[i].light.color[0];
-              diff[1] = scene[best_obj].diffuse_color[1]*scene[i].light.color[1];
-              diff[2] = scene[best_obj].diffuse_color[2]*scene[i].light.color[2];
-              v3_scale(diff, diff_nl, diff);  
-
-            //Populate the specular component
-            double spec_vr = -1*v3_dot(V, R);
-            double spec[3];
-            if(spec_vr > 0){
-              spec[0] = (scene[best_obj].specular_color[0]*scene[i].light.color[0]*pow(spec_vr, 20));
-              spec[1] = (scene[best_obj].specular_color[1]*scene[i].light.color[1]*pow(spec_vr, 20));
-              spec[2] = (scene[best_obj].specular_color[2]*scene[i].light.color[2]*pow(spec_vr, 20));
-            }
-            else {
-              spec[0] = 0;
-              spec[1] = 0;
-              spec[2] = 0;
-            }
-
-            //account for angular and radial attinuation and add diffuse + specular to finish color processing
-            double rad_a = frad(scene[i].light.radial_a0, scene[i].light.radial_a1, scene[i].light.radial_a2, dist);
-            double ang_a;
-              if(scene[i].light.theta != 0){
-                ang_a = fang(Rd, scene[i].light.direction, scene[i].light.theta * M_PI / 180.0, scene[i].light.angular_a0);
-              }
-              else
-                ang_a = 1;
-            if (scene[best_obj].reflectivity != 0){
-                          color[0] += scene[best_obj].reflectivity*(rad_a * ang_a * (diff[0] + spec[0]));
-            color[1] += rad_a * ang_a * (diff[1] + spec[1]); //*fang * frad
-            color[2] += rad_a * ang_a * (diff[2] + spec[2]);
-            }
-            else{
-            color[0] += (rad_a * ang_a * (diff[0] + spec[0]));
-            color[1] += rad_a * ang_a * (diff[1] + spec[1]); //*fang * frad
-            color[2] += rad_a * ang_a * (diff[2] + spec[2]);
-            }
-          }
-        }
-
-        //Assign and clamp color values
-        pix.r = (unsigned char)clamp(color[0]*255.0);
-        pix.g = (unsigned char)clamp(color[1]*255.0);
-        pix.b = (unsigned char)clamp(color[2]*255.0);
-
+        pix.r = (unsigned char)clamp(color[0]*255);
+        pix.g = (unsigned char)clamp(color[1]*255);
+        pix.b = (unsigned char)clamp(color[2]*255);
       }
       else {
         //eigengrau
@@ -653,4 +557,98 @@ void shoot_ray_shadow(Object *scene, int num_objects, int best_obj, double *Ro, 
   }
   *t = best_t_shadow;
   *o = best_obj_shadow;
+}
+
+void shade(Object *scene, int num_objects, double best_t, int best_obj, double *Ro, double *Rd, double *color){
+
+  //printf("\nbest_t: %lf || best_obj: %d || Ro:[%lf, %lf, %lf] || Rd:[%lf, %lf, %lf] || color:[%lf, %lf, %lf] ")
+  //loop over lights adding lighting elements to the color
+  for (int i = 1; i < num_objects; i += 1) {
+    if(scene[i].kind != 4) 
+      continue;
+    double Ron[3];
+    double Rdn[3];
+    double Ron_temp[3];
+
+    //cast a ray from intersection to light, if there is no object in the way add specular color
+    v3_scale(Rd, best_t, Ron_temp);
+    v3_add(Ron_temp, Ro, Ron);
+    v3_sub(scene[i].light.center, Ron, Rdn);
+
+    double B[3];
+    v3_sub(scene[i].light.center, Ron, B);
+    double dist = v3_mag(B);
+
+
+
+    double best_t_shadow;
+    int best_obj_shadow;
+    shoot_ray_shadow(scene, num_objects, best_obj, Ron, Rdn, &best_t_shadow, &best_obj_shadow);
+
+    //make sure to check that light obstruction is in front of the light
+    if (best_t_shadow > 0 && best_t_shadow != INFINITY && best_t_shadow < dist ) {
+      //Do nothing!
+    }
+    else{
+      // no object was in the way
+      // N, L, R, V
+      // Set up needed vectors
+      double N[3], L[3], R[3], V[3];
+
+      if(scene[best_obj].kind == 2)
+        memcpy(N, scene[best_obj].plane.normal, sizeof(double)*3); // if plane
+      else
+        v3_sub(Ron, scene[best_obj].sphere.center, N);
+      v3_normalize(N);
+
+      v3_sub(scene[i].light.center, Ron, L);
+      v3_normalize(L); //light_position - Ron;
+
+      //r=L−2(L DOT n)n
+      double q = 2*v3_dot(L, N);
+      double rscale[3];
+      v3_scale(N, q, rscale);
+      v3_sub(L, rscale, R);
+      v3_normalize(R);
+
+      memcpy(V, Rd, sizeof(double)*3);
+      v3_scale(V, -1.0, V);
+      v3_normalize(V);
+
+      //Populate the diffuse component
+      double diff_nl = v3_dot(N, L);
+      double diff[3];
+        diff[0] = scene[best_obj].diffuse_color[0]*scene[i].light.color[0];
+        diff[1] = scene[best_obj].diffuse_color[1]*scene[i].light.color[1];
+        diff[2] = scene[best_obj].diffuse_color[2]*scene[i].light.color[2];
+        v3_scale(diff, diff_nl, diff);  
+
+      //Populate the specular component
+      double spec_vr = -1*v3_dot(V, R);
+      double spec[3];
+      if(spec_vr > 0){
+        spec[0] = (scene[best_obj].specular_color[0]*scene[i].light.color[0]*pow(spec_vr, 20));
+        spec[1] = (scene[best_obj].specular_color[1]*scene[i].light.color[1]*pow(spec_vr, 20));
+        spec[2] = (scene[best_obj].specular_color[2]*scene[i].light.color[2]*pow(spec_vr, 20));
+      }
+      else {
+        spec[0] = 0;
+        spec[1] = 0;
+        spec[2] = 0;
+      }
+
+      //account for angular and radial attinuation and add diffuse + specular to finish color processing
+      double rad_a = frad(scene[i].light.radial_a0, scene[i].light.radial_a1, scene[i].light.radial_a2, dist);
+      double ang_a;
+      if(scene[i].light.theta != 0){
+        ang_a = fang(Rd, scene[i].light.direction, scene[i].light.theta * M_PI / 180.0, scene[i].light.angular_a0);
+      }
+      else
+        ang_a = 1;
+      //printf("|| %lf ||", ang_a);
+      color[0] += rad_a * ang_a * (diff[0] + spec[0]);
+      color[1] += rad_a * ang_a * (diff[1] + spec[1]); //*fang * frad
+      color[2] += rad_a * ang_a * (diff[2] + spec[2]);
+    }
+  }
 }

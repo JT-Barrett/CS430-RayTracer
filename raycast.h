@@ -76,6 +76,7 @@ static inline double sqr(double v) {
 
 void shoot_ray(Object *scene, int num_objects, double *Ro, double *Rd, double *t, int *o);
 void shoot_ray_shadow(Object *scene, int num_objects, int best_obj, double *Ro, double *Rd, double *t, int *o);
+void shade(Object *sceneRef, int num_objects, double best_t, int best_obj, double *Ro, double *Rd, double *color);
 
 
 typedef double* V3;
@@ -147,9 +148,10 @@ static inline double frad(double a0, double a1, double a2, double dl){
 static inline double fang(V3 Rd, V3 Ld, double theta, double a0){
   v3_normalize(Rd);
   v3_normalize(Ld);
-  if(theta == 0)
+  //v3_scale(Rd, -1, Rd);
+  if(theta == 0)  
     return 1;
-  double l_theta = v3_dot(Rd, Ld);
+  double l_theta = v3_dot(Ld, Rd);
   if (acos(l_theta) > theta)
     return 0;
   else{
@@ -160,4 +162,4 @@ static inline double fang(V3 Rd, V3 Ld, double theta, double a0){
 static inline double deg_to_rad(double deg){
   double d = deg * M_PI / 180.0;
   return d;
-}
+} 
