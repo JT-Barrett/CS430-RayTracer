@@ -313,7 +313,7 @@ int raycast(Pixel *buffer, Scene scene, int num_objects, int width, int height){
         color[1] = 0;
         color[2] = 0;
 
-        shade(scene, num_objects, best_t, best_obj, Ro, Rd, color);
+        shade_rec(scene, num_objects, best_t, best_obj, Ro, Rd, color, 1);
 
         pix.r = (unsigned char)clamp(color[0]*255);
         pix.g = (unsigned char)clamp(color[1]*255);
@@ -559,10 +559,13 @@ void shoot_ray_shadow(Object *scene, int num_objects, int best_obj, double *Ro, 
   *o = best_obj_shadow;
 }
 
-void shade(Object *scene, int num_objects, double best_t, int best_obj, double *Ro, double *Rd, double *color){
+void shade_rec(Object *scene, int num_objects, double best_t, int best_obj, double *Ro, double *Rd, double *color, int level){
 
-  //printf("\nbest_t: %lf || best_obj: %d || Ro:[%lf, %lf, %lf] || Rd:[%lf, %lf, %lf] || color:[%lf, %lf, %lf] ")
+  //if (level == 2) printf("\nnum_obj: %d || rec_t: %lf || rect_obj: %d || Ron:[%lf, %lf, %lf] || refl_Rd:[%lf, %lf, %lf] || refl_color:[%lf, %lf, %lf] || level: %d"
+  // , num_objects, best_t, best_obj, Ro[0], Ro[1], Ro[2], Rd[0], Rd[1], Rd[2], color[0], color[1], color[2], level);
   //loop over lights adding lighting elements to the color
+
+  //f (level = 2) printf("[%lf, %lf, %lf] Ro: level 2 init", Ro[0], Ro[1], Ro[2]);
   for (int i = 1; i < num_objects; i += 1) {
     if(scene[i].kind != 4) 
       continue;
@@ -605,11 +608,7 @@ void shade(Object *scene, int num_objects, double best_t, int best_obj, double *
       v3_normalize(L); //light_position - Ron;
 
       //r=L−2(L DOT n)n
-      double q = 2*v3_dot(L, N);
-      double rscale[3];
-      v3_scale(N, q, rscale);
-      v3_sub(L, rscale, R);
-      v3_normalize(R);
+      v3_reflect(L, N, R);
 
       memcpy(V, Rd, sizeof(double)*3);
       v3_scale(V, -1.0, V);
@@ -646,9 +645,43 @@ void shade(Object *scene, int num_objects, double best_t, int best_obj, double *
       else
         ang_a = 1;
       //printf("|| %lf ||", ang_a);
+      //if (level >1) printf("\n[%lf, %lf] d:[%lf, %lf, %lf] s:[%lf, %lf, %lf]", rad_a, ang_a, diff[0], diff[1], diff[2], spec[0], spec[1], spec[2]);
       color[0] += rad_a * ang_a * (diff[0] + spec[0]);
       color[1] += rad_a * ang_a * (diff[1] + spec[1]); //*fang * frad
       color[2] += rad_a * ang_a * (diff[2] + spec[2]);
+
+      //if (level >1) printf("[%lf, %lf, %lf]", color[0], color[1], color[2]);
+
+      //printf("\nRon:[%lf, %lf, %lf] level: %d init", Ron[0], Ron[1], Ron[2], level);
+      if (level < MAX_REC) {
+        
+        if(scene[best_obj].reflectivity > 0){
+          double refl_ray[3];
+          v3_reflect(Rd, N, refl_ray);
+          //printf("ref: [%lf, %lf, %lf] ", refl_ray[0], refl_ray[1], refl_ray[2]);
+
+          double rec_t = INFINITY;
+          int rec_obj;
+          shoot_ray(scene, num_objects, Ron, refl_ray, &rec_t, &rec_obj);
+          //printf("\nRon:[%lf, %lf, %lf]", Ron[0], Ron[1], Ron[2]);
+
+
+          double refl_color[3] = {0, 0, 0};
+          
+          //if (rec_t != INFINITY) printf("\nnum_obj: %d || best_t: %lf || best_obj: %d || Ro:[%lf, %lf, %lf] || Rd:[%lf, %lf, %lf] || color:[%lf, %lf, %lf] || level: 1 ", num_objects, best_t, best_obj, Ro[0], Ro[1], Ro[2], Rd[0], Rd[1], Rd[2], color[0], color[1], color[2]);
+          
+          if (rec_t != INFINITY) shade_rec(scene, num_objects, rec_t, rec_obj, Ron, refl_ray, refl_color, level + 1);
+          //shoot_rec(Ron, refl_ray, sceneRef, &reflectionColor, depth + 1, NULL);
+          //(Object *scene, int num_objects, double best_t, int best_obj, double *Ro, double *Rd, double *color, int level)
+          //printf(" c:[%lf, %lf, %lf] r:[%lf, %lf, %lf] ||", color[0], color[1], color[2], refl_color[0], refl_color[1], refl_color[2]);
+          v3_scale(refl_color, scene[best_obj].reflectivity, refl_color);
+          //printf("[%lf, %lf, %lf]", refl_color[0], refl_color[1], refl_color[2]);
+          v3_add(refl_color, color, color);
+        }
+        if(scene[best_obj].refractivity > 0){
+
+        }
+      }
     }
   }
 }

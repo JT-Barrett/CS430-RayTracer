@@ -3,6 +3,7 @@
 #define ORIGIN 0
 #define MAX_DEPTH 255
 #define EXPECTED_ARGS 5
+#define MAX_REC 2
 
 
 //MACROS
@@ -76,7 +77,7 @@ static inline double sqr(double v) {
 
 void shoot_ray(Object *scene, int num_objects, double *Ro, double *Rd, double *t, int *o);
 void shoot_ray_shadow(Object *scene, int num_objects, int best_obj, double *Ro, double *Rd, double *t, int *o);
-void shade(Object *sceneRef, int num_objects, double best_t, int best_obj, double *Ro, double *Rd, double *color);
+void shade_rec(Object *sceneRef, int num_objects, double best_t, int best_obj, double *Ro, double *Rd, double *color, int level);
 
 
 typedef double* V3;
@@ -107,10 +108,6 @@ static inline void v3_angle(V3 a, V3 b, double c){
 
 }
 
-static inline void  v3_reflect(V3 a, V3 b, double c){
-
-}
-
 static inline void v3_cross(V3 a, V3 b, V3 c){
   c[0] = a[1] * b[2] - a[2] * b[1];
   c[1] = a[2] * b[0] - a[0] * b[2];
@@ -122,6 +119,14 @@ static inline void v3_normalize(double* v) {
   v[0] /= len;
   v[1] /= len;
   v[2] /= len;
+}
+
+static inline void  v3_reflect(V3 A, V3 N, V3 C){
+  double q = 2*v3_dot(A, N);
+  double rscale[3];
+  v3_scale(N, q, rscale);
+  v3_sub(A, rscale, C);
+  v3_normalize(C);
 }
 
 static inline double v3_mag(double* v){
